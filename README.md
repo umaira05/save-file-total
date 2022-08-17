@@ -18,7 +18,7 @@ Download the latest release and place the .zip file in the `Mods` folder of your
 
 ### Development
 
-Download the source code, unzip it so that all its contents are in a folder titled `SaveFileTotal`, and place in the `Mods` folder in the file directory of Celeste. The location of the file is important, as this mod is a C# class library dependent on the game executable.
+Download the source code, unzip it so that all its contents are in a folder titled `SaveFileTotal`, and place in the `Mods` folder in the file directory of Celeste. The location of the file is important, as this mod is a C# class library dependent on the game executable. Compile the library to generate the `.dll` file.
 
 # Special Thanks
 
