@@ -14,7 +14,7 @@ This mod requires the installation of [Everest](https://everestapi.github.io/), 
 
 ### Usage
 
-Download the latest release and place the .zip file in the `Mods` folder of your Celeste directory. Alternatively, use Everest's One-Click Installer through [Gamebanana](https://gamebanana.com/mods/395489) or [Olympus](https://gamebanana.com/tools/download/6449).
+Download the latest release and place the .zip file in the `Mods` folder of your Celeste directory. Alternatively, use Everest's One-Click Installer through [GameBanana](https://gamebanana.com/mods/395489) or [Olympus](https://gamebanana.com/tools/download/6449).
 
 ### Development
 
