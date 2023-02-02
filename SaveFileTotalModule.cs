@@ -17,17 +17,30 @@ namespace Celeste.Mod.SaveFileTotal {
         public static SaveFileTotalModuleSettings Settings => (SaveFileTotalModuleSettings)Instance._Settings;
 
         private bool SaveFileTotal_TryDelete(On.Celeste.SaveData.orig_TryDelete orig, int slot) {
-            string saveFilePath = UserIO.GetSaveFilePath(slot.ToString());
-            long time = -1;
-            foreach (string line in File.ReadLines(saveFilePath)) {
-                if (line.Contains("<Time>")) {
-                    time = long.Parse(line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1));
-                    break;
+            if (slot == -1 && !File.Exists(UserIO.GetSaveFilePath(SaveData.GetFilename(-1)))) {
+                long debugTime = SaveData.Instance.Time;
+                int debugDeaths = SaveData.Instance.TotalDeaths;
+                if (orig(slot)) {
+                    Settings.DeletedDebugTime += debugTime;
+                    Settings.DeletedDebugDeaths += debugDeaths;
+                    Logger.Log(LogLevel.Info, "SaveFileTotal", "Added deleted debug save data to totals");
+                    return true;
                 }
+                return false;
             }
+            List<string> stats = Settings.FetchSaveFileStats(slot);
+            long time = long.Parse(stats[1]);
+            int deaths = int.Parse(stats[2]);
             if (orig(slot)) {
+                if (slot == -1) {
+                    Settings.DeletedDebugTime += time;
+                    Settings.DeletedDebugDeaths += deaths;
+                    Logger.Log(LogLevel.Info, "SaveFileTotal", "Added deleted debug save data to totals");
+                    return true;
+                }
                 Settings.DeletedSaveTime += time;
-                Logger.Log(LogLevel.Info, "SaveFileTotal", "Added deleted save time to total");
+                Settings.DeletedSaveDeaths += deaths;
+                Logger.Log(LogLevel.Info, "SaveFileTotal", "Added deleted save data to totals");
                 return true;
             }
             return false;
@@ -43,64 +56,132 @@ namespace Celeste.Mod.SaveFileTotal {
     }
 
     [SettingName("modoptions_savefiletotal")]
+    [SettingInGame(false)]
     public class SaveFileTotalModuleSettings : EverestModuleSettings {
 
         [SettingIgnore]
         public long DeletedSaveTime { get; set; } = 0;
 
+        [SettingIgnore]
+        public int DeletedSaveDeaths { get; set; } = 0;
+
+        [SettingIgnore]
+        public long DeletedDebugTime { get; set; } = 0;
+
+        [SettingIgnore]
+        public int DeletedDebugDeaths { get; set; } = 0;
+
         [YamlIgnore]
         public int SaveFileSubmenu { get; set; } = 0;
 
         public void CreateSaveFileSubmenuEntry(TextMenu menu, bool inGame) {
-            if (!inGame) {
-                menu.Add(new TextMenu.Button("Save File Total")
-                    .Pressed(() => OuiGenericMenu.Goto<OuiSaveFileSubmenu>(overworld => overworld.Goto<OuiModOptions>(), new object[0])));
+            menu.Add(new TextMenu.Button("Total Time")
+                .Pressed(() => OuiGenericMenu.Goto<OuiSaveTimeSubmenu>(overworld => overworld.Goto<OuiModOptions>(), new object[0])));
+            menu.Add(new TextMenu.Button("Total Deaths")
+                .Pressed(() => OuiGenericMenu.Goto<OuiSaveDeathsSubmenu>(overworld => overworld.Goto<OuiModOptions>(), new object[0])));
+            if (DeletedDebugTime != 0 || DeletedDebugDeaths != 0 ||
+                (File.Exists(UserIO.GetSaveFilePath(SaveData.GetFilename(-1))) && (FetchSaveFileStats(-1)[1] != "0" || FetchSaveFileStats(-1)[2] != "0"))) {
+                menu.Add(new TextMenu.Button("Debug Stats")
+                    .Pressed(() => OuiGenericMenu.Goto<OuiDebugSaveStatsSubmenu>(overworld => overworld.Goto<OuiModOptions>(), new object[0])));
             }
         }
-    }
 
-    class OuiSaveFileSubmenu : OuiGenericMenu, OuiModOptions.ISubmenu {
-        public override string MenuName => "Save File Total";
-
-        private void readSaveFiles(ref TextMenu menu, ref List<int> saveFileIndexes, int index, long sum_of_times) {
-            if (index == -1) {
-                TimeSpan total_ts = TimeSpan.FromMilliseconds(sum_of_times / 10000);
-                string total_time_str = (int)total_ts.TotalHours + total_ts.ToString(@"\:mm\:ss\.fff");
-                menu.Add(new TextMenu.Button("Total save time: " + total_time_str));
-                TimeSpan del_ts = TimeSpan.FromMilliseconds(SaveFileTotalModule.Settings.DeletedSaveTime / 10000);
-                string del_str = (int)del_ts.TotalHours + del_ts.ToString(@"\:mm\:ss\.fff");
-                menu.Add(new TextMenu.Button("Deleted save time: " + del_str));
-                return;
-            }
-            string filename = null;
-            long time = -1;
-            string fileNum = saveFileIndexes[index].ToString();
-            foreach (string line in File.ReadLines(UserIO.GetSaveFilePath(fileNum))) {
-                if (line.Contains("<Name>")) {
-                    filename = line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1);
-                } else if (line.Contains("<Time>")) {
-                    time = long.Parse(line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1));
-                } else if (filename != null && time != -1) break;
-            }
-            readSaveFiles(ref menu, ref saveFileIndexes, index - 1, sum_of_times + time);
+        public string SfTimeToStr(long time) {
             TimeSpan ts = TimeSpan.FromMilliseconds(time / 10000);
-            string time_str = (int)ts.TotalHours + ts.ToString(@"\:mm\:ss\.fff");
-            menu.Add(new TextMenu.Button("File " + fileNum + ": " + filename + ", " + time_str));
+            return ((int)ts.TotalHours).ToString("N0") + ts.ToString(@"\:mm\:ss\.fff");
         }
 
-        protected override void addOptionsToMenu(TextMenu menu) {
+        public List<string> FetchSaveFileStats(int slot) {
+            List<string> stats = new List<string>();
+            for (int i = 0; i < 3; ++i) stats.Add("");
+            string saveFilePath = UserIO.GetSaveFilePath(SaveData.GetFilename(slot));
+            foreach (string line in File.ReadLines(saveFilePath)) {
+                if (line.Contains("<Name>"))
+                    stats[0] = line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1);
+                else if (line.Contains("<Time>"))
+                    stats[1] = line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1);
+                else if (line.Contains("<TotalDeaths>"))
+                    stats[2] = line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1);
+                else if (!stats.Contains("")) break;
+            }
+            return stats;
+        }
+
+        public List<int> FetchSaveFileIndexes() {
             string saveFilePath = UserIO.GetSaveFilePath();
             List<int> saveFileIndexes = new List<int>();
             if (Directory.Exists(saveFilePath)) {
                 foreach (string filePath in Directory.GetFiles(saveFilePath, "*.celeste")) {
                     string fileName = Path.GetFileName(filePath);
-                    if (int.TryParse(fileName.Substring(0, fileName.Length - 8), out int fileIndex)) {
+                    if (int.TryParse(fileName.Substring(0, fileName.Length - 8), out int fileIndex))
                         saveFileIndexes.Add(fileIndex);
-                    }
                 }
             }
             saveFileIndexes.Sort();
-            readSaveFiles(ref menu, ref saveFileIndexes, saveFileIndexes.Count - 1, SaveFileTotalModule.Settings.DeletedSaveTime);
+            return saveFileIndexes;
+        }
+    }
+
+    class OuiSaveTimeSubmenu : OuiGenericMenu, OuiModOptions.ISubmenu {
+        public override string MenuName => "Total Time";
+        protected override void addOptionsToMenu(TextMenu menu) {
+            List<int> saveFileIndexes = SaveFileTotalModule.Settings.FetchSaveFileIndexes();
+            ReadSaveFiles(ref menu, ref saveFileIndexes, saveFileIndexes.Count - 1, SaveFileTotalModule.Settings.DeletedSaveTime);
+        }
+
+        private void ReadSaveFiles(ref TextMenu menu, ref List<int> saveFileIndexes, int index, long sumOfTimes) {
+            if (index == -1) {
+                menu.Add(new TextMenu.Button("Total save time: " + SaveFileTotalModule.Settings.SfTimeToStr(sumOfTimes)));
+                menu.Add(new TextMenu.Button("Deleted save time: " + SaveFileTotalModule.Settings.SfTimeToStr(SaveFileTotalModule.Settings.DeletedSaveTime)));
+                return;
+            }
+            List<string> stats = SaveFileTotalModule.Settings.FetchSaveFileStats(saveFileIndexes[index]);
+            string filename = stats[0];
+            long time = long.Parse(stats[1]);
+            ReadSaveFiles(ref menu, ref saveFileIndexes, index - 1, sumOfTimes + time);
+            string fileNum = SaveData.GetFilename(saveFileIndexes[index]);
+            menu.Add(new TextMenu.Button("File " + fileNum + ": " + filename + ", " + SaveFileTotalModule.Settings.SfTimeToStr(time)));
+        }
+    }
+
+    class OuiSaveDeathsSubmenu : OuiGenericMenu, OuiModOptions.ISubmenu {
+        public override string MenuName => "Total Deaths";
+        protected override void addOptionsToMenu(TextMenu menu) {
+            List<int> saveFileIndexes = SaveFileTotalModule.Settings.FetchSaveFileIndexes();
+            ReadSaveFiles(ref menu, ref saveFileIndexes, saveFileIndexes.Count - 1, SaveFileTotalModule.Settings.DeletedSaveDeaths);
+        }
+
+        private void ReadSaveFiles(ref TextMenu menu, ref List<int> saveFileIndexes, int index, int sumOfDeaths) {
+            if (index == -1) {
+                menu.Add(new TextMenu.Button("Total save deaths: " + sumOfDeaths.ToString("N0")));
+                menu.Add(new TextMenu.Button("Deleted save deaths: " + SaveFileTotalModule.Settings.DeletedSaveDeaths.ToString("N0")));
+                return;
+            }
+            List<string> stats = SaveFileTotalModule.Settings.FetchSaveFileStats(saveFileIndexes[index]);
+            string filename = stats[0];
+            int deaths = int.Parse(stats[2]);
+            ReadSaveFiles(ref menu, ref saveFileIndexes, index - 1, sumOfDeaths + deaths);
+            string fileNum = SaveData.GetFilename(saveFileIndexes[index]);
+            menu.Add(new TextMenu.Button("File " + fileNum + ": " + filename + ", " + deaths.ToString("N0")));
+        }
+    }
+
+    class OuiDebugSaveStatsSubmenu : OuiGenericMenu, OuiModOptions.ISubmenu {
+        public override string MenuName => "Debug Stats";
+        protected override void addOptionsToMenu(TextMenu menu) {
+            long time = 0;
+            int deaths = 0;
+            if (File.Exists(UserIO.GetSaveFilePath(SaveData.GetFilename(-1)))) {
+                List<string> stats = SaveFileTotalModule.Settings.FetchSaveFileStats(-1);
+                time = long.Parse(stats[1]);
+                deaths = int.Parse(stats[2]);
+            }
+            menu.Add(new TextMenu.Button("Total debug save time: " + SaveFileTotalModule.Settings.SfTimeToStr(time + SaveFileTotalModule.Settings.DeletedDebugTime)));
+            menu.Add(new TextMenu.Button("Deleted debug save time: " + SaveFileTotalModule.Settings.SfTimeToStr(SaveFileTotalModule.Settings.DeletedDebugTime)));
+            menu.Add(new TextMenu.Button("Debug save time: " + SaveFileTotalModule.Settings.SfTimeToStr(time)));
+            menu.Add(new TextMenu.Button("Total debug save deaths: " + (deaths + SaveFileTotalModule.Settings.DeletedDebugDeaths).ToString("N0")));
+            menu.Add(new TextMenu.Button("Deleted debug save deaths: " + SaveFileTotalModule.Settings.DeletedDebugDeaths.ToString("N0")));
+            menu.Add(new TextMenu.Button("Debug save deaths: " + deaths.ToString("N0")));
         }
     }
 }
