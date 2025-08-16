@@ -92,9 +92,17 @@ namespace Celeste.Mod.SaveFileTotal {
         }
 
         public List<string> FetchSaveFileStats(int slot) {
-            List<string> stats = new List<string>();
-            for (int i = 0; i < 3; ++i) stats.Add("");
+            // default empty stats in case the vanilla file no longer exists
+            List<string> stats = new List<string> { "", "0", "0" };
+
             string saveFilePath = UserIO.GetSaveFilePath(SaveData.GetFilename(slot));
+
+            // the vanilla file may not exist, return empty stats in this case
+            if (!File.Exists(saveFilePath)) {
+                Logger.Log(LogLevel.Info, "SaveFileTotal", $"Vanilla file for slot {slot} did not exist when deleting, ignoring stats");
+                return stats;
+            }
+
             foreach (string line in File.ReadLines(saveFilePath)) {
                 if (line.Contains("<Name>"))
                     stats[0] = line.Substring(line.IndexOf(">") + 1, line.IndexOf("</") - line.IndexOf(">") - 1);
