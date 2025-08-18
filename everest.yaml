@@ -1,6 +1,6 @@
-﻿- Name: SaveFileTotal
-  Version: 1.1.0
-  DLL: bin/Debug/net452/SaveFileTotal.dll
+- Name: SaveFileTotal
+  Version: 1.2.0
+  DLL: bin/SaveFileTotal.dll
   Dependencies:
     - Name: Everest
-      Version: 1.3471.0
+      Version: 1.5577.0
